@@ -29,11 +29,11 @@ function M.grep_notes(options, picker_options, cb)
     { title = "Zk Grep", picker = config.options.picker, multi_select = true },
     config.options.picker_options or {},
     options or {},
-    picker_options or {},
+    picker_options or {}, -- DEBUG: Is it safe to merge picker_options into options ???
     options.notebook_path and { notebook_path = options.notebook_path } or {}
   )
-  if options.picker ~= "telescope" and options.picker ~= "snacks_picker" then
-    print(":ZkGrep is only usable with telescope and snacks_picker.")
+  if options.picker ~= "fzf_lua" and options.picker ~= "telescope" and options.picker ~= "snacks_picker" then
+    print(":ZkGrep is only usable with fzf_lua, telescope and snacks_picker.")
     return
   end
   require("zk.pickers." .. options.picker).show_grep_picker(options, cb)
