@@ -226,6 +226,7 @@ function M.show_grep_picker(opts, cb)
   if not opts then
     return
   end
+  print("opts: " .. vim.inspect(opts))
 
   -- register opts._cmd, toggle_ignore/title_flag/--fixed-strings
   local cmd0 = get_grep_cmd(opts, fzf_core.fzf_query_placeholder, 2)
@@ -265,10 +266,59 @@ function M.show_grep_picker(opts, cb)
   --   return line
   -- end
 
+  -- opts.fn_transform = function(line)
+  --   -- vim.schedule(function()
+  --   --   vim.notify("fn_transform", vim.log.levels.INFO, { title = "zk-nvim: fzf_lua: show_grep_picker()" })
+  --   -- end)
+  --   -- path:lnum:col:content をパース
+  --   local path, lnum, col, content = line:match("^([^:]+):(%d+):(%d+):(.*)$")
+  --   if not path then
+  --     return line
+  --   end
+  --
+  --   -- title を lookup
+  --   local note = notes_cached[path]
+  --   local title = note and note.title or path -- title が無ければ path
+  --
+  --   -- path:lnum:col:content:title に変換
+  --   return table.concat({ path, lnum, col, content, title }, ":")
+  -- end
+
+  -- opts.fn_transform = function(line)
+  --   -- あなたの grep 出力が "path:line:text" 形式なら
+  --   -- 必要な部分だけ抜き出して整形する
+  --   vim.schedule(function()
+  --     print(vim.inspect(line))
+  --   end)
+  --   local path, lnum, text = line:match("^(.-):(%d+):(.*)$")
+  --   if not path then
+  --     -- print("not matched")
+  --     return line -- マッチしない時はそのまま
+  --   end
+  --   -- print("matched")
+  --
+  --   -- 好きに整形
+  --   return string.format("%s:%s %s", path, lnum, text)
+  -- end
+
+  -- local strip_ansi = function(s)
+  --   return s:gsub("\27%[[0-9;]*m", "")
+  -- end
+
+  opts.fn_transform = function(line) -- DEBUG: 表示の変換はできたが、配色が消える。
+    line = line:gsub("\27%[[0-9;]*m", "")
+    local path, lnum, col, text = line:match("^(.-):(%d+):(.*)$")
+    if not path then
+      return line
+    end
+    return string.format("%s:%s:%s:%s", path, lnum, col, text)
+  end
+
   -- -- local notes_by_path = {}
   -- fzf_opts = vim.tbl_deep_extend("force", {
   --   prompt = opts.title .. " ❯ ",
   --   previewer = fzf_lua_previewer,
+
   --   -- fzf_opts = { -- DEBUG: Use rg, right ?
   --   --   ["--delimiter"] = delimiter,
   --   --   ["--tiebreak"] = "index",
@@ -321,7 +371,7 @@ function M.show_grep_picker(opts, cb)
 
   -- local query = opts.query or ""
 
-  print("fzf_opts: " .. vim.inspect(opts))
+  -- print("opts: " .. vim.inspect(opts))
   -- print("cmd: " .. vim.inspect(cmd))
 
   require("zk.api").list(root, { select = M.note_picker_list_api_selection }, function(err, notes)
@@ -343,7 +393,6 @@ function M.show_grep_picker(opts, cb)
       fzf_core.fzf_live(contents, opts)
     end
   end)
-  -- end, fzf_opts)
 end
 
 -- function M.show_grep_picker(opts, cb)
@@ -370,6 +419,114 @@ end
 --       end,
 --     },
 --   })
+-- end
+
+--------------------------------------------------------------------------------
+
+-- local DELIM = "\x1f"
+-- local zk = require("zk")
+-- local fzf = require("fzf-lua")
+-- local Path = require("plenary.path")
+--
+-- -- -- zk list を index 化
+-- -- local function index_notes_by_path(notes)
+-- --   local map = {}
+-- --   for _, note in ipairs(notes) do
+-- --     map[note.absPath] = note
+-- --   end
+-- --   return map
+-- -- end
+--
+-- -- rg の1行を entry に変換する
+-- local function make_entry(line, notes)
+--   -- rg 出力は基本: path:lnum:col:match
+--   local path, lnum, col, text = line:match("^(.-):(%d+):(%d+):(.*)$")
+--   if not path then
+--     return nil
+--   end
+--
+--   local note = notes[path]
+--   local title = note and note.title or Path:new(path):make_relative()
+--
+--   return table.concat({
+--     path,
+--     title,
+--     lnum,
+--     text,
+--   }, DELIM)
+-- end
+--
+-- -- 表示は title
+-- local function with_nth()
+--   return {
+--     ["--delimiter"] = DELIM,
+--     ["--with-nth"] = 2, -- タイトルだけ表示
+--     ["--nth"] = 2, -- あいまい検索もタイトル対象
+--   }
+-- end
+--
+-- -- previewer: path & lnum でプレビュー
+-- local function previewer()
+--   return function(line)
+--     if not line or line == "" then
+--       return { path = nil, lnum = 1, preview = "" }
+--     end
+--
+--     -- 2 カラム対応
+--     local path, title = line:match("^(.-)" .. DELIM .. "(.-)$")
+--
+--     if not path or path == "" then
+--       return { path = nil, lnum = 1, preview = "" }
+--     end
+--
+--     return {
+--       path = path,
+--       lnum = 1,
+--       preview = path,
+--     }
+--   end
+-- end
+--
+-- function M.show_grep_picker(opts)
+--   opts = opts or {}
+--
+--   -- notebook path
+--   local root = require("zk.util").resolve_notebook_path(0)
+--
+--   require("zk.api").list(root, { select = { "title", "absPath" } }, function(err, notes)
+--     if err then
+--       vim.notify("zk list failed", vim.log.levels.ERROR)
+--       return
+--     end
+--
+--     local notes_by_path = index_notes_by_path(notes)
+--
+--     fzf.live_grep({
+--       prompt = "ZkGrep ❯ ",
+--       fzf_opts = with_nth(),
+--       previewer = previewer(),
+--       -- grep 出力を transform
+--       fn_transform = function(lines)
+--         local out = {}
+--         for _, line in ipairs(lines) do
+--           local entry = make_entry(line, notes_by_path)
+--           if entry then
+--             table.insert(out, entry)
+--           end
+--         end
+--         return out
+--       end,
+--       -- 選択時：path だけ抜く
+--       actions = {
+--         ["default"] = function(selected)
+--           for _, line in ipairs(selected) do
+--             local path = line:match("^(.-)" .. DELIM)
+--             vim.cmd("edit " .. fzf.shell.escape(path))
+--           end
+--         end,
+--       },
+--     })
+--   end)
 -- end
 
 return M
