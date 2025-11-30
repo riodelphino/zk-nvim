@@ -718,6 +718,7 @@ Auto-update the 'modified' datetime field on save:
 ```lua
 rules = {
   ['Update datetime (`modified` as 2025-01-01 00:00:00)'] = {
+    enabled = true, -- true: enable this rule
     scope = 'line',
     pattern = "^(modified *: *)(%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d)$", -- line matching pattern
     ---@param captures table
@@ -743,7 +744,7 @@ modified : 2025-11-30 16:02:27
 After:
 ```markdown
 ---
-modified : 2025-11-30 16:02:27
+modified : 2025-12-01 02:06:24
 ---
 ```
 
@@ -753,6 +754,7 @@ Auto-sort the 'tags' field (on save):
 ```lua
 rules = {
   ['Sort tags in YAML'] = {
+    enabled = true,
     scope = 'line',
     pattern = '^(tags *: *)%[(.*)%]$',
     ---@param captures table
@@ -795,6 +797,7 @@ Auto-update the 'tags' field from block style to flow style on save:
 ```lua
 rules = {
   ['Update tags style in YAML (block -> flow)'] = {
+    enabled = true,
     scope = 'file',
     ---@param lines string[]
     ---@return string[]? lines
@@ -852,6 +855,56 @@ After:
 tags : [ tag1, tag2, tag3 ]
 ---
 ```
+
+Rule example 4
+
+Auto-update the first 'heading' with YAML title on save:
+```lua
+rules = {
+  ['YAML title updates Heading'] = {
+    enabled = true,
+    scope = 'file',
+    ---@param lines string[]
+    ---@return string[]? lines
+    format = function(lines) -- formatter for file
+      local YAML_DELIMITER = '^%-%-%-$'
+      local new_title
+      local in_yaml = false
+      for i, line in ipairs(lines) do
+        if line:match(YAML_DELIMITER) then in_yaml = not in_yaml end
+        if in_yaml then
+          new_title = not new_title and line:match('^title *: *(.*)$') or new_title
+        else
+          local marker, heading = line:match('^(#+) *(.*)$')
+          if marker and heading and new_title then
+            lines[i] = string.format('%s %s', marker, new_title)
+            break
+          end
+        end
+      end
+      return lines
+    end,
+    notebook_paths = {},
+    dirs = {},
+  },
+},
+```
+
+Before:
+```markdown
+---
+title : The New Title
+---
+# The Old Title
+```
+After:
+```markdown
+---
+title : The New Title
+---
+# The New Title
+```
+
 
 
 # Miscellaneous
