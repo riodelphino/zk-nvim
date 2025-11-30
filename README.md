@@ -94,6 +94,10 @@ return {
           end,
         },
       },
+      update = { -- See `## Update Options`
+        enabled = false,
+        triggers = {},
+      },
     })
   end,
 }
@@ -250,6 +254,15 @@ require("zk.commands").get("ZkNew")({ dir = "daily" })
 require("zk.commands").get("ZkNotes")({ createdAfter = "3 days ago", tags = { "work" } })
 require("zk.commands").get("ZkNewFromTitleSelection")()
 ```
+
+### Updating
+
+Toggle automatic content updating.
+
+- `:ZkUpdateToggle [{category_name}]`
+  When `category_name` is given, toggles `opts.update[category_name].enabled`.
+  Otherwise, toggles `opts.update.enabled`.
+
 
 ## Custom Commands
 
@@ -464,6 +477,9 @@ vim.api.nvim_set_keymap("n", "<leader>zt", "<Cmd>ZkTags<CR>", opts)
 vim.api.nvim_set_keymap("n", "<leader>zf", "<Cmd>ZkNotes { sort = { 'modified' }, match = { vim.fn.input('Search: ') } }<CR>", opts)
 -- Search for the notes matching the current visual selection.
 vim.api.nvim_set_keymap("v", "<leader>zf", ":'<,'>ZkMatch<CR>", opts)
+
+-- Toggle auto update
+vim.api.nvim_set_keymap("n", "<leader>zu", ":ZkUpdateToggle<CR>", opts)
 ```
 
 You can add additional key mappings for Markdown buffers located in a `zk`
@@ -508,6 +524,7 @@ if require("zk.util").notebook_root(vim.fn.expand('%:p')) ~= nil then
 end
 ```
 
+
 # Integrations
 
 ## bufferline
@@ -547,6 +564,40 @@ require("zk").setup({
   ...
 })
 ```
+
+
+## Update Options
+
+Automatically update the followings scope.
+
+- scope: "line"
+Search patterns in each lines and replace it.
+
+- scope: "file"
+More flexible format for file.
+
+
+The structure is:
+```lua
+require("zk").setup({
+  ...
+  update = {
+    enabled = true, -- true: enable auto content updating
+    triggers = {
+      on_save = { -- trigger name (as you like)
+        enabled = true, -- true: enable auto content updating for this trigger
+        event = "BufWritePre", -- attach for this vim event
+        rules = {
+          -- Add your rules here
+        },
+      },
+      -- Add your triggers here
+    },
+  },
+  ...
+})
+```
+
 
 ## bufferline Sample Config
 
@@ -641,6 +692,148 @@ require("bufferline").setup({
 
 > [!Note]
 > `buf` table contains `name`, `path` and `bufnr` fields.
+
+
+Rule example 1 (scope: "line")
+
+Auto-update the 'modified' datetime field on save:
+```lua
+rules = {
+  ['Update datetime (`modified` as 2025-01-01 00:00:00)'] = {
+    scope = 'line',
+    pattern = "^(modified *: *)(%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d)$", -- line matching pattern
+    ---@param captures table
+    ---@param line string
+    ---@return string
+    format = function(captures, line) -- formatter for captured items
+      captures[2] = os.date("%Y-%m-%d %H:%M:%S")
+      return table.concat(captures)
+    end,
+    in_yaml = true, -- true: only matches in YAML frontmatter / false: only matches in content
+    notebook_paths = {}, -- valie notebook_paths (default: allows all notebook_paths)
+    dirs = {}, -- valid directories (default: allows all dirctories)
+  },
+},
+```
+
+Before:
+```markdown
+---
+modified : 2025-11-30 16:02:27
+---
+```
+After:
+```markdown
+---
+modified : 2025-11-30 16:02:27
+---
+```
+
+Rule example 2 (scope: "line")
+
+Auto-sort the 'tags' field (on save):
+```lua
+rules = {
+  ['Sort tags in YAML'] = {
+    scope = 'line',
+    pattern = '^(tags *: *)%[(.*)%]$',
+    ---@param captures table
+    ---@param line string
+    ---@return string
+    format = function(captures, line)
+      local tags = captures[2]
+      if tags then
+        tags = string.gsub(tags, ' ', '')
+        local tbl_tags = vim.fn.split(tags, ',')
+        table.sort(tbl_tags, function(a, b) return a < b end)
+        captures[2] = '[ ' .. table.concat(tbl_tags, ', ') .. ' ]'
+      end
+      return table.concat(captures)
+    end,
+    in_yaml = true,
+    notebook_paths = {},
+    dirs = {},
+  },
+},
+```
+
+Before:
+```markdown
+---
+tags : [ tag1, tag2, tag3 ]
+---
+```
+After:
+```markdown
+---
+tags : [ tag1, tag2, tag3 ]
+---
+```
+
+
+Rule example 3 (scope: "file")
+
+Auto-update the 'tags' field from block style to flow style on save:
+```lua
+rules = {
+  ['Update tags style in YAML (block -> flow)'] = {
+    scope = 'file',
+    ---@param lines string[]
+    ---@return string[]? lines
+    format = function(lines) -- formatter for file
+      local YAML_DELIMITER = '^%-%-%-$'
+      local tag_key
+      local tags = {}
+      local in_yaml = false
+      local lnum_start, lnum_end
+      for i, line in ipairs(lines) do
+        if line:match(YAML_DELIMITER) then in_yaml = not in_yaml end
+        if not in_yaml then break end
+        if in_yaml then
+          if not lnum_start then
+            tag_key = line:match('^(tags *:)$') -- Find "tags :"
+            if tag_key then lnum_start = i end
+          else
+            local tag = line:match(' *%- (.*)$') -- Find "  - tag1"
+            if tag then
+              table.insert(tags, tag)
+            else
+              lnum_end = i - 1 -- End of the tags block
+              break
+            end
+          end
+        end
+      end
+      if #tags > 0 then
+        for i = lnum_end, lnum_start, -1 do -- Remove block style tags
+          table.remove(lines, i)
+        end
+        -- table.sort(tags, function(a, b) return a < b end) -- Sort if you need
+        table.insert(lines, lnum_start, tag_key .. ' [ ' .. table.concat(tags, ', ') .. ' ]') -- Add tags in flow style
+      end
+      return lines
+    end,
+    notebook_paths = {},
+    dirs = {},
+  },
+},
+```
+
+Before:
+```markdown
+---
+tags :
+  - tag2
+  - tag3
+  - tag1
+---
+```
+After:
+```markdown
+---
+tags : [ tag1, tag2, tag3 ]
+---
+```
 
 
 # Miscellaneous

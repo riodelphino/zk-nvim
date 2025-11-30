@@ -47,6 +47,7 @@ function M.setup(options)
   require("zk.commands.builtin")
   require("zk.autocmds")
   require("zk.integrations.bufferline").override_name_formatter()
+  util.set_autocmd_for_update()
 end
 
 ---Cd into the notebook root
