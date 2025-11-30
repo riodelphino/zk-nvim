@@ -207,7 +207,9 @@ function M.update(trigger_name)
   for _, rule in pairs(all_rules) do
     if is_notebook_allowed(rule.notebook_paths) then
       if is_dir_allowed(rule.dirs) then
-        table.insert(rules[rule.scope], rule)
+        if rule.enabled then
+          table.insert(rules[rule.scope], rule)
+        end
       end
     end
   end
