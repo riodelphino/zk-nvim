@@ -2,12 +2,21 @@ local exec = require("fzf-lua").fzf_exec
 local builtin_previewer = require("fzf-lua.previewer.builtin")
 local ansi_codes = require("fzf-lua").utils.ansi_codes
 local actions = require("fzf-lua").actions
+local note_cache = {} -- DEBUG: NEED THIS ?
 
 local M = {}
 
 local delimiter = "\x01"
 
 local fzf_lua_previewer = builtin_previewer.buffer_or_file:extend()
+
+local function index_notes_by_path(notes)
+  local tbl = {}
+  for _, note in ipairs(notes) do
+    tbl[note.absPath] = note
+  end
+  return tbl
+end
 
 function fzf_lua_previewer:new(o, opts, fzf_win)
   fzf_lua_previewer.super.new(self, o, opts, fzf_win)
@@ -128,5 +137,240 @@ function M.show_tag_picker(tags, options, cb)
     fzf_cb() --EOF
   end, fzf_opts)
 end
+
+-- local uv = vim.uv or vim.loop
+-- local path = require "fzf-lua.path"
+local fzf_core = require("fzf-lua.core")
+local fzf_utils = require("fzf-lua.utils")
+local fzf_config = require("fzf-lua.config")
+local make_entry = require("fzf-lua.make_entry")
+
+local get_grep_cmd = make_entry.get_grep_cmd
+
+local function normalize_live_grep_opts(opts)
+  -- disable treesitter as it collides with cmd regex highlighting
+  opts = opts or {}
+  opts._treesitter = false
+
+  ---@type fzf-lua.config.Grep
+  opts = fzf_config.normalize_opts(opts, "grep")
+  if not opts then
+    return
+  end
+
+  -- we need this for `actions.grep_lgrep`
+  opts.__ACT_TO = opts.__ACT_TO or M.grep
+
+  -- used by `actions.toggle_ignore', normalize_opts sets `__call_fn`
+  -- to the calling function  which will resolve to this fn), we need
+  -- to deref one level up to get to `live_grep_{mt|st}`
+  opts.__call_fn = fzf_utils.__FNCREF2__()
+
+  -- NOTE: no longer used since we hl the query with `FzfLuaLivePrompt`
+  -- prepend prompt with "*" to indicate "live" query
+  -- opts.prompt = type(opts.prompt) == "string" and opts.prompt or "> "
+  -- if opts.live_ast_prefix ~= false then
+  --   opts.prompt = opts.prompt:match("^%*") and opts.prompt or ("*" .. opts.prompt)
+  -- end
+
+  -- when using live_grep there is no "query", the prompt input
+  -- is a regex expression and should be saved as last "search"
+  -- this callback overrides setting "query" with "search"
+  opts.__resume_set = function(what, val, o)
+    if what == "query" then
+      fzf_config.resume_set("search", val, { __resume_key = o.__resume_key })
+      fzf_config.resume_set("no_esc", true, { __resume_key = o.__resume_key })
+      fzf_utils.map_set(fzf_config, "__resume_data.last_query", val)
+      -- also store query for `fzf_resume` (#963)
+      fzf_utils.map_set(fzf_config, "__resume_data.opts.query", val)
+      -- store in opts for convenience in action callbacks
+      o.last_query = val
+    else
+      fzf_config.resume_set(what, val, { __resume_key = o.__resume_key })
+    end
+  end
+  -- we also override the getter for the quickfix list name
+  opts.__resume_get = function(what, o)
+    return fzf_config.resume_get(what == "query" and "search" or what, { __resume_key = o.__resume_key })
+  end
+
+  -- when using an empty string grep (as in 'grep_project') or
+  -- when switching from grep to live_grep using 'ctrl-g' users
+  -- may find it confusing why is the last typed query not
+  -- considered the last search so we find out if that's the
+  -- case and use the last typed prompt as the grep string
+  if not opts.search or #opts.search == 0 and (opts.query and #opts.query > 0) then
+    -- fuzzy match query needs to be regex escaped
+    opts.no_esc = nil
+    opts.search = opts.query
+    -- also replace in `__call_opts` for `resume=true`
+    opts.__call_opts.query = nil
+    opts.__call_opts.no_esc = nil
+    opts.__call_opts.search = opts.query
+  end
+
+  -- interactive interface uses 'query' parameter
+  opts.query = opts.search or ""
+  if opts.search and #opts.search > 0 then
+    -- escape unless the user requested not to
+    if not opts.no_esc then
+      opts.query = fzf_utils.rg_escape(opts.search)
+    end
+  end
+
+  return opts
+end
+
+function M.show_grep_picker(opts, cb)
+  opts = opts or {}
+  opts = normalize_live_grep_opts(opts)
+  if not opts then
+    return
+  end
+
+  -- register opts._cmd, toggle_ignore/title_flag/--fixed-strings
+  local cmd0 = get_grep_cmd(opts, fzf_core.fzf_query_placeholder, 2)
+  -- local cmd = "rg --line-number --column --color=always" -- DEBUG: REMOVE THIS
+
+  -- if multiprocess is optional (=1) and no prpocessing is required
+  -- use string contents (shell command), stringify_mt will use the
+  -- command as is without the neovim headless wrapper
+  local contents
+  if
+    opts.multiprocess == 1
+    and not opts.fn_transform
+    and not opts.fn_preprocess
+    and not opts.fn_postprocess
+  then
+    contents = cmd0
+  else
+    -- since we're using function contents force multiprocess if optional
+    opts.multiprocess = opts.multiprocess == 1 and true or opts.multiprocess
+    contents = function(s, o)
+      return FzfLua.make_entry.lgrep(s, o)
+    end
+  end
+
+  -- DEBUG: 呼ばれない...
+  -- -- opts.fn_transform = function(line) -- これもよくわからん。
+  -- opts.fn_postprocess = function(opts) -- 引数が opts って...
+  --   local path = line:match("([^:]+):")
+  --   local note = notes_cached[path]
+  --   if note and note.title then
+  --     -- path:title:rest に差し替えたい場合など
+  --     -- return line:gsub(path, note.title)
+  --     print(path)
+  --     return line:gsub(path, note.title)
+  --   end
+  --   print(line)
+  --   return line
+  -- end
+
+  -- -- local notes_by_path = {}
+  -- fzf_opts = vim.tbl_deep_extend("force", {
+  --   prompt = opts.title .. " ❯ ",
+  --   previewer = fzf_lua_previewer,
+  --   -- fzf_opts = { -- DEBUG: Use rg, right ?
+  --   --   ["--delimiter"] = delimiter,
+  --   --   ["--tiebreak"] = "index",
+  --   --   ["--with-nth"] = 2,
+  --   --   ["--tabstop"] = 4,
+  --   --   ["--header"] = ansi_codes.blue("CTRL-E: create a note with the query as title"),
+  --   -- },
+  --   -- we rely on `fzf-lua` to open notes in any other case than the default (pressing enter)
+  --   -- to take advantage of the plugin builtin actions like opening in a split
+  --   actions = {
+  --     ["default"] = function(selected, opts)
+  --       local selected_notes = vim.tbl_map(function(line)
+  --         local path = string.match(line, "([^" .. delimiter .. "]+)")
+  --         return notes_cached[path]
+  --       end, selected)
+  --       if opts.multi_select then
+  --         cb(selected_notes)
+  --       else
+  --         cb(selected_notes[1])
+  --       end
+  --     end,
+  --     ["ctrl-s"] = function(selected, opts)
+  --       local entries = path_from_selected(selected)
+  --       actions.file_split(entries, opts)
+  --     end,
+  --     ["ctrl-v"] = function(selected, opts)
+  --       local entries = path_from_selected(selected)
+  --       actions.file_vsplit(entries, opts)
+  --     end,
+  --     ["ctrl-t"] = function(selected, opts)
+  --       local entries = path_from_selected(selected)
+  --       actions.file_tabedit(entries, opts)
+  --     end,
+  --     ["ctrl-e"] = function()
+  --       local query = require("fzf-lua").config.__resume_data.last_query
+  --       opts["title"] = query
+  --       require("zk").new(opts)
+  --     end,
+  --   },
+  -- }, opts.fzf_lua or {})
+
+  -- exec(function(fzf_cb)
+
+  local root = opts.notebook_path or nil
+  if not root then
+    local zk_util = require("zk.util")
+    local path = zk_util.resolve_notebook_path(0)
+    root = zk_util.notebook_root(path or vim.fn.getcwd()) or vim.fn.getcwd()
+  end
+
+  -- local query = opts.query or ""
+
+  print("fzf_opts: " .. vim.inspect(opts))
+  -- print("cmd: " .. vim.inspect(cmd))
+
+  require("zk.api").list(root, { select = M.note_picker_list_api_selection }, function(err, notes)
+    if not err then
+      notes_cached = index_notes_by_path(notes) -- DEBUG: NEED THIS ???
+      -- for _, note in ipairs(notes) do
+      --   local title = note.title or note.path
+      --   local entry = table.concat({ note.absPath, title }, delimiter)
+      --   fzf_cb(entry)
+      -- end
+      -- fzf_cb() --EOF
+      -- require("fzf-lua").fzf_live(cmd,, fzf_opts)
+
+      -- require("fzf-lua").live_grep(fzf_opts) -- DEBUG: いみないっしょ
+      -- require("fzf-lua").live_grep()
+      -- search query in header line
+      opts = fzf_core.set_title_flags(opts, { "cmd", "live" })
+      opts = fzf_core.set_fzf_field_index(opts)
+      fzf_core.fzf_live(contents, opts)
+    end
+  end)
+  -- end, fzf_opts)
+end
+
+-- function M.show_grep_picker(opts, cb)
+--   opts = opts or {}
+--   local root = opts.notebook_path or vim.fn.getcwd()
+--   local query = opts.query or ""
+--
+--   local cmd = {
+--     "rg",
+--     "--line-number",
+--     "--column",
+--     "--color=always",
+--     query,
+--     root,
+--   }
+--
+--   require("fzf-lua").fzf_live(cmd, {
+--     prompt = "ZkGrep ❯ ",
+--     previewer = "builtin",
+--     actions = {
+--       ["default"] = function(selected)
+--         local path, lnum = selected[1]:match("([^:]+):(%d+)")
+--         cb({ path = path, line = tonumber(lnum) })
+--       end,
+--     },
+--   })
+-- end
 
 return M
