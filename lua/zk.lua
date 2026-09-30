@@ -141,7 +141,7 @@ end
 ---@see https://github.com/zk-org/zk/blob/main/docs/tips/editors-integration.md#zklist
 ---@see zk.ui.pick_notes
 function M.edit(options, picker_options)
-  function cb(notes)
+  local function cb(notes)
     if picker_options and picker_options.multi_select == false then
       notes = { notes }
     end

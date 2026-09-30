@@ -139,7 +139,7 @@ function M.make_grep_sorter(opts)
   local fzy = opts.fzy_mod or require("telescope.algos.fzy")
 
   return require("telescope.sorters").Sorter:new({
-    scoring_function = function(_, prompt, line, display)
+    scoring_function = function(_, prompt, line)
       -- Order: fzf -> title (or filename) -> lnum -> col
       local score
       local filename, lnum, col, text = string.match(line, "^(.-):(%d+):(%d+):(.*)$")
@@ -159,7 +159,8 @@ function M.make_grep_sorter(opts)
     end,
 
     highlighter = function(_, prompt, display)
-      local entry_text = display:match("^.-:%d+:%d+%s(.*)$") or display -- Should match the pattern returned by displayer()
+      -- Should match the pattern returned by displayer()
+      local entry_text = display:match("^.-:%d+:%d+%s(.*)$") or display
       local prefix_len = #display - #entry_text -- start position of entry.text
       local relative_positions = fzy.positions(prompt, entry_text)
       local absolute_positions = {}
@@ -217,7 +218,7 @@ function M.create_grep_entry_maker(root)
 end
 
 -- TODO: Need refactoring with `telescope.builtin.files.live_grep`?
--- See https://github.com/nvim-telescope/telescope.nvim/blob/b4da76be54691e854d3e0e02c36b0245f945c2c7/lua/telescope/builtin/__files.lua#L115
+-- See https://github.com/nvim-telescope/telescope.nvim/blob/b4da76b/lua/telescope/builtin/__files.lua#L115
 function M.show_grep_picker(options, cb)
   options = options or {}
 
