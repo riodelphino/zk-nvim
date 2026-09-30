@@ -2,69 +2,66 @@ local zk = require("zk")
 local api = require("zk.api")
 local util = require("zk.util")
 local commands = require("zk.commands")
+local config = require("zk.config")
 
 commands.add("ZkIndex", zk.index)
 
 commands.add("ZkNew", function(options)
-  options = options or {}
+	options = options or {}
 
-  if options.inline == true then
-    options.inline = nil
-    options.dryRun = true
-    options.insertContentAtLocation = util.get_lsp_location_from_caret()
-  end
+	if options.inline == true then
+		options.inline = nil
+		options.dryRun = true
+		options.insertContentAtLocation = util.get_lsp_location_from_caret()
+	end
 
-  zk.new(options)
+	zk.new(options)
 end)
 
+local function zk_new_from_selection(kind, options)
+	local location = util.get_lsp_location_from_selection()
+	local selected_text = util.get_selected_text()
+	assert(selected_text ~= nil, "No selected text")
+
+	options = options or {}
+
+	if kind == "title" then
+		options.title = selected_text
+	elseif kind == "content" then
+		options.content = selected_text
+	else
+		error("Invalid kind: " .. tostring(kind))
+	end
+
+	if options.inline == true then
+		options.inline = nil
+		options.dryRun = true
+		options.insertContentAtLocation = location
+	else
+		options.insertLinkAtLocation = location
+	end
+
+	zk.new(options)
+end
+
 commands.add("ZkNewFromTitleSelection", function(options)
-  local location = util.get_lsp_location_from_selection()
-  local selected_text = util.get_selected_text()
-  assert(selected_text ~= nil, "No selected text")
-
-  options = options or {}
-  options.title = selected_text
-
-  if options.inline == true then
-    options.inline = nil
-    options.dryRun = true
-    options.insertContentAtLocation = location
-  else
-    options.insertLinkAtLocation = location
-  end
-
-  zk.new(options)
+	zk_new_from_selection("title", options)
 end, { needs_selection = true })
 
 commands.add("ZkNewFromContentSelection", function(options)
-  local location = util.get_lsp_location_from_selection()
-  local selected_text = util.get_selected_text()
-  assert(selected_text ~= nil, "No selected text")
-
-  options = options or {}
-  options.content = selected_text
-
-  if options.inline == true then
-    options.inline = nil
-    options.dryRun = true
-    options.insertContentAtLocation = location
-  else
-    options.insertLinkAtLocation = location
-  end
-
-  zk.new(options)
+	zk_new_from_selection("content", options)
 end, { needs_selection = true })
 
 commands.add("ZkCd", zk.cd)
 
 commands.add("ZkNotes", function(options)
-  zk.edit(options, { title = "Zk Notes" })
+	zk.edit(options, { title = "Zk Notes" })
 end)
 
 commands.add("ZkBuffers", function(options)
-  local hrefs = util.get_buffer_paths()
-  options = vim.tbl_extend("force", { hrefs = hrefs }, options or {})
-  zk.edit(options, { title = "Zk Buffers" })
+	local hrefs = util.get_buffer_paths()
+	options = vim.tbl_extend("force", { hrefs = hrefs }, options or {})
+	zk.edit(options, { title = "Zk Buffers" })
 end)
 
 commands.add("ZkGrep", function(options)
@@ -73,66 +70,107 @@ commands.add("ZkGrep", function(options)
 end)
 
 commands.add("ZkBacklinks", function(options)
-  options = vim.tbl_extend("force", { linkTo = { vim.api.nvim_buf_get_name(0) } }, options or {})
-  zk.edit(options, { title = "Zk Backlinks" })
+	options = vim.tbl_extend("force", { linkTo = { vim.api.nvim_buf_get_name(0) } }, options or {})
+	zk.edit(options, { title = "Zk Backlinks" })
 end)
 
 commands.add("ZkLinks", function(options)
-  options = vim.tbl_extend("force", { linkedBy = { vim.api.nvim_buf_get_name(0) } }, options or {})
-  zk.edit(options, { title = "Zk Links" })
+	options = vim.tbl_extend("force", { linkedBy = { vim.api.nvim_buf_get_name(0) } }, options or {})
+	zk.edit(options, { title = "Zk Links" })
 end)
 
 local function insert_link(selected, opts)
-  opts = vim.tbl_extend("force", {}, opts or {})
+	opts = vim.tbl_extend("force", {}, opts or {})
 
-  local location = util.get_lsp_location_from_selection()
-  local selected_text = util.get_selected_text()
+	local location = util.get_lsp_location_from_selection()
+	local selected_text = ""
 
-  if not selected then
-    location = util.get_lsp_location_from_caret()
-  else
-    if opts["matchSelected"] then
-      opts = vim.tbl_extend("force", { match = { selected_text } }, opts or {})
-    end
-  end
+	if not selected then
+		location = util.get_lsp_location_from_caret()
+	else
+		selected_text = util.get_selected_text()
+		if opts["matchSelected"] then
+			opts = vim.tbl_extend("force", { match = { selected_text } }, opts or {})
+		end
+	end
 
-  zk.pick_notes(opts, { title = "Zk Insert link", multi_select = false }, function(note)
-    assert(note ~= nil, "Picker failed before link insertion: note is nil")
+	zk.pick_notes(opts, { title = "Zk Insert link", multi_select = false }, function(note)
+		assert(note ~= nil, "Picker failed before link insertion: note is nil")
 
-    local link_opts = {}
+		local link_opts = {}
 
-    if selected and selected_text ~= nil then
-      link_opts.title = selected_text
-    end
+		if selected and selected_text ~= nil then
+			link_opts.title = selected_text
+		end
 
-    api.link(note.path, location, nil, link_opts, function(err, res)
-      if not res then
-        error(err)
-      end
-    end)
-  end)
+		api.link(note.path, location, nil, link_opts, function(err)
+			if err then
+				error(err)
+			end
+		end)
+	end)
 end
 
 commands.add("ZkInsertLink", function(opts)
-  insert_link(false, opts)
+	insert_link(false, opts)
 end, { title = "Insert Zk link" })
 commands.add("ZkInsertLinkAtSelection", function(opts)
-  insert_link(true, opts)
+	insert_link(true, opts)
 end, { title = "Insert Zk link", needs_selection = true })
 
-commands.add("ZkMatch", function(options)
-  local selected_text = util.get_selected_text()
-  assert(selected_text ~= nil, "No selected text")
-  options = vim.tbl_extend("force", { match = { selected_text } }, options or {})
-  zk.edit(options, { title = "Zk Notes matching " .. vim.inspect(selected_text) })
-end, { needs_selection = true })
+-- Matches against the provided options (which may include a `match` field
+-- - see https://zk-org.github.io/zk/tips/editors-integration.html#zk-list),
+-- a visual selection, or (in normal mode with no selection) the word under
+-- the cursor. `options.match`, if given, takes priority over the selection
+-- or cursor word.
+commands.add("ZkMatch", function(options, range)
+	options = options or {}
+
+	if not options.match then
+		local match_text
+		if range == 2 then
+			match_text = util.get_selected_text()
+		else
+			local cword = vim.fn.expand("<cword>")
+			match_text = cword ~= "" and cword or nil
+		end
+		assert(
+			match_text ~= nil,
+			"No selected text or word under cursor given. Usage: :'<,'>ZkMatch or place the cursor on a word."
+		)
+		options.match = { match_text }
+	end
+
+	zk.edit(options, { title = "Zk Notes matching " .. vim.inspect(options.match) })
+end, { optional_selection = true })
+
+-- List of tag specific search terms, which need to be later ignored.
+-- https://zk-org.github.io/zk/tips/editors-integration.html#zk-tag-list
+-- https://github.com/zk-org/zk-nvim/pull/290
+local search_terms = { "name", "note-count" }
 
 commands.add("ZkTags", function(options)
-  zk.pick_tags(options, { title = "Zk Tags" }, function(tags)
-    tags = vim.tbl_map(function(v)
-      return v.name
-    end, tags)
-    options = vim.tbl_extend("keep", { tags = tags }, options or {})
-    zk.edit(options, { title = "Zk Notes for tag(s) " .. vim.inspect(tags) })
-  end)
+	zk.pick_tags(options, { title = "Zk Tags" }, function(tags)
+		tags = vim.tbl_map(function(v)
+			return v.name
+		end, tags)
+
+		local sep = config.options.tags.multi_select_strategy
+		if options and options.multi_select_strategy then
+			sep = options.multi_select_strategy
+		end
+		local tag_query = table.concat(tags, " " .. sep .. " ")
+
+		-- Don't pass on tag specific search terms to subsequent call to sort.
+		if options and options.sort then
+			options.sort = vim.tbl_filter(function(v)
+				return not vim.iter(search_terms):any(function(term)
+					return vim.startswith(v, term)
+				end)
+			end, options.sort)
+		end
+
+		options = vim.tbl_extend("keep", { tags = { tag_query } }, options or {})
+		zk.edit(options, { title = "Zk Notes for tag(s) " .. vim.inspect(tags) .. " using " .. sep })
+	end)
 end)

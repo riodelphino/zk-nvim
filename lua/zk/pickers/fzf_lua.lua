@@ -15,6 +15,7 @@ function fzf_lua_previewer:new(o, opts, fzf_win)
   return self
 end
 
+-- luacheck: ignore self
 function fzf_lua_previewer:parse_entry(entry)
   local path = entry:match("([^" .. delimiter .. "]+)")
   return { path = path }
@@ -32,7 +33,7 @@ function M.show_note_picker(notes, options, cb)
   options = options or {}
   local notes_by_path = {}
   local fzf_opts = vim.tbl_deep_extend("force", {
-    prompt = options.title .. " ❯ ",
+    prompt = options.title .. " > ",
     previewer = fzf_lua_previewer,
     fzf_opts = {
       ["--delimiter"] = delimiter,
@@ -40,11 +41,12 @@ function M.show_note_picker(notes, options, cb)
       ["--with-nth"] = 2,
       ["--tabstop"] = 4,
       ["--header"] = ansi_codes.blue("CTRL-E: create a note with the query as title"),
+      ["--multi"] = options.multi_select,
     },
     -- we rely on `fzf-lua` to open notes in any other case than the default (pressing enter)
     -- to take advantage of the plugin builtin actions like opening in a split
     actions = {
-      ["default"] = function(selected, opts)
+      ["default"] = function(selected)
         local selected_notes = vim.tbl_map(function(line)
           local path = string.match(line, "([^" .. delimiter .. "]+)")
           return notes_by_path[path]
@@ -90,13 +92,14 @@ function M.show_tag_picker(tags, options, cb)
   options = options or {}
   local tags_by_name = {}
   local fzf_opts = vim.tbl_extend("force", {
-    prompt = options.title .. "> ",
+    prompt = options.title .. " > ",
     fzf_opts = {
       ["--delimiter"] = delimiter,
       ["--tiebreak"] = "index",
       ["--nth"] = 2,
       ["--exact"] = "",
       ["--tabstop"] = 4,
+      ["--multi"] = options.multi_select,
     },
     actions = {
       ["default"] = function(selected, _)

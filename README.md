@@ -7,6 +7,9 @@ Checkout [Shivan's](https://github.com/shivan-s) video,
 [_Note-taking System ALL Programmers Should Consider_](https://www.youtube.com/watch?v=UzhZb7e4l4Y),
 to see it in action.
 
+Join us on Matrix for general, support and development discussion:
+[\#zk-org:pub.solar](https://matrix.to/#/#zk-org:pub.solar).
+
 ## Requirements
 
 | `zk-nvim`     | `zk`            | Neovim         |
@@ -37,11 +40,10 @@ Via [lazy.nvim](https://github.com/folke/lazy.nvim)
 ```lua
 {
   "zk-org/zk-nvim",
-  config = function()
-    require("zk").setup({
-      -- See Setup section below
-    })
-  end
+  name = "zk",
+  opts = {
+    -- See Setup section below
+  },
 }
 ```
 
@@ -54,42 +56,48 @@ or
 
 ## Setup
 
-> [!IMPORTANT] If you have the [zk cli](https://github.com/zk-org/zk) installed,
-> then you _do not need to install `zk lsp`_ via Mason (or otherwise).
+> [!IMPORTANT]\
+> If you have the [zk cli](https://github.com/zk-org/zk) installed, then you _do
+> not need to install `zk lsp`_ via Mason (or otherwise).
 
 Default `lazy.nvim` setup:
 
 ```lua
 return {
   "zk-org/zk-nvim",
-  config = function()
-    require("zk").setup({
-      -- Can be "telescope", "fzf", "fzf_lua", "minipick", "snacks_picker",
-      -- or select" (`vim.ui.select`).
-      picker = "select",
+  name = "zk",
+  opts = {
+    -- Can be "telescope", "fzf", "fzf_lua", "minipick", "snacks_picker",
+    -- or select" (`vim.ui.select`).
+    picker = "select",
 
-      lsp = {
-        -- `config` is passed to `vim.lsp.start(config)`
-        config = {
-          name = "zk",
-          cmd = { "zk", "lsp" },
-          filetypes = { "markdown" },
-          -- on_attach = ...
-          -- etc, see `:h vim.lsp.start()`
-        },
-
-        -- automatically attach buffers in a zk notebook that match the given filetypes
-        auto_attach = {
-          enabled = true,
-        },
+    lsp = {
+      -- `config` is passed to `vim.lsp.start(config)`
+      config = {
+        name = "zk",
+        cmd = { "zk", "lsp" },
+        filetypes = { "markdown" },
+        -- on_attach = ...
+        -- etc, see `:h vim.lsp.start()`
       },
-    })
-  end,
+
+      -- automatically attach buffers in a zk notebook that match the given filetypes
+      auto_attach = {
+        enabled = true,
+      },
+    },
+
+    tags = {
+      -- Configure how multiple tags should be combined in a ZkTags search
+      -- Can be "AND" or "OR"
+      multi_select_strategy = "AND",
+    }
+  },
 }
 ```
 
-Note that the `setup` function will not add any key mappings for you. If you
-want to add key mappings, see the [example mappings](#example-mappings).
+Note that this will not add any key mappings for you. If you want to add key
+mappings, see the [example mappings](#example-mappings).
 
 ### Picker Options
 
@@ -153,54 +161,56 @@ see what they can do, and learn as you go.
 
 [Options (ZkIndex)](https://zk-org.github.io/zk/tips/editors-integration.html#zk-index)
 
-- `:ZkIndex [{options}]`  
+- `:ZkIndex [{options}]`\
   Indexes the notebook.
 
 ### Creating Notes
 
 [Options (ZkNew)](https://zk-org.github.io/zk/tips/editors-integration.html#zk-new)
 
-- `:ZkNew [{options}]`  
+- `:ZkNew [{options}]`\
   Creates and edits a new note.
 
-- `:'<,'>ZkNewFromTitleSelection [{options}]`  
+- `:'<,'>ZkNewFromTitleSelection [{options}]`\
   Creates a new note from the visual selection (used as the **title**) and
-  replaces the selection with a link to the note.
+  replaces the selection with a link to the note (unless `append = true` is
+  passed to options).
 
-- `:'<,'>ZkNewFromContentSelection [{options}]`  
+- `:'<,'>ZkNewFromContentSelection [{options}]`\
   Creates a new note from the visual selection (used as the **content**) and
-  replaces the selection with a link to the note.
+  replaces the selection with a link to the note (unless `append = true` is
+  passed to options).
 
 ### Navigation
 
 [Options (ZkList)](https://zk-org.github.io/zk/tips/editors-integration.html#zk-list)
 
-- `:ZkCd [{options}]`  
+- `:ZkCd [{options}]`\
   Changes directory to the notebook root.
 
-- `:ZkNotes [{options}]`  
+- `:ZkNotes [{options}]`\
   Opens a notes picker.
 
-- `:ZkGrep [{options}]`
-  Opens a grep notes picker
+- `:ZkGrep [{options}]`\
+  Opens a grep notes picker.
 
-- `:ZkBuffers [{options}]`  
+- `:ZkBuffers [{options}]`\
   Opens a notes picker for active buffers (notebook files only).
 
-- `:ZkBacklinks [{options}]`  
+- `:ZkBacklinks [{options}]`\
   Opens a notes picker showing backlinks of the current buffer.
 
-- `:ZkLinks [{options}]`  
+- `:ZkLinks [{options}]`\
   Opens a notes picker showing outbound links of the current buffer.
 
 ### Linking
 
 [Options (ZkList)](https://zk-org.github.io/zk/tips/editors-integration.html#zk-list)
 
-- `:ZkInsertLink`  
+- `:ZkInsertLink`\
   Inserts a link at the cursor location.
 
-- `:'<,'>ZkInsertLinkAtSelection [{options}]`  
+- `:'<,'>ZkInsertLinkAtSelection [{options}]`\
   Inserts a link around the selected text.
   - Special option: `matchSelected = true` → filters notes similar to the
     selection.
@@ -209,10 +219,15 @@ see what they can do, and learn as you go.
 
 [Options (ZkList)](https://zk-org.github.io/zk/tips/editors-integration.html#zk-list)
 
-- `:'<,'>ZkMatch [{options}]`  
-  Opens a notes picker, filtering for notes matching the visual selection.
+- `:ZkMatch [{options}]`\
+  Opens a notes picker, filtering for notes matching a search term. The term is
+  resolved from, in priority order: an explicit `options.match` (see the `match`
+  option in
+  [Options (ZkList)](https://zk-org.github.io/zk/tips/editors-integration.html#zk-list)),
+  a visual selection (`:'<,'>ZkMatch`), or — in normal mode — the word under the
+  cursor.
 
-- `:ZkTags [{options}]`  
+- `:ZkTags [{options}]`\
   Opens a notes picker for selected tags.
 
 In addition, `options.notebook_path` can be used to explicitly specify a
@@ -226,6 +241,8 @@ _Examples:_
 :ZkNotes { createdAfter = "3 days ago", tags = { "work" } }
 :'<,'>ZkNewFromTitleSelection " this will use your last visual mode selection. Note that you *must* call this command with the '<,'> range.
 :ZkCd
+:ZkMatch { match = { "foo", "bar" } } " search notes matching "foo" or "bar"
+:ZkMatch { sort = { "created" } } " no match given, falls back to the word under the cursor (or visual selection)
 ```
 
 ---
@@ -620,15 +637,8 @@ vim.g.maplocalleader = "\\"
 
 -- Setup lazy.nvim
 require("lazy").setup({
-	{
-		"neovim/nvim-lspconfig",
-	},
-	{
-		"zk-org/zk-nvim",
-		config = function()
-			require("zk").setup()
-		end,
-	},
+	{ "neovim/nvim-lspconfig" },
+	{ "zk-org/zk-nvim", name = "zk", opts = {}, },
 	-- automatically check for plugin updates
 	checker = { enabled = true },
 })
@@ -642,21 +652,6 @@ Then change this line in `.zk/config.toml`
 editor = "nvim -u ~/path/to/init-zk/init.lua"
 ```
 
-## Telescope Plugin
-
-> Not recommended, instead just use the
-> [:ZkNotes or :ZkTags commands](#built-in-commands).
-
-It's possible (but not required) to also load the notes and tags pickers as a
-telescope plugin.
-
-```lua
-require("telescope").load_extension("zk")
-```
-
-```vim
-:Telescope zk notes
-:Telescope zk notes createdAfter=3\ days\ ago
-:Telescope zk tags
-:Telescope zk tags created=today
-```
+Running `zk <edit|new|etc>` will then by default use the minimal neovim config. 
+To test opening with neovim directly (bypassing zk's handling of the editor),
+run `nvim -u ~/path/to/init-zk/init.lua <file|cmd>` explicitly on the commandline. 

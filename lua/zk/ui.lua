@@ -4,11 +4,10 @@ local M = {}
 
 ---Opens a notes picker
 --
----@param notes list
 ---@param options? table containing {picker}, {title}, {multi_select} keys
 ---@param cb function
 function M.pick_notes(notes, options, cb)
-  options = vim.tbl_extend(
+  options = vim.tbl_deep_extend(
     "force",
     { title = "Zk Notes", picker = config.options.picker, multi_select = true },
     config.options.picker_options or {},
@@ -41,11 +40,10 @@ end
 
 ---Opens a tags picker
 --
----@param tags list
 ---@param options? table containing {picker}, {title}, {multi_select} keys
 ---@param cb function
 function M.pick_tags(tags, options, cb)
-  options = vim.tbl_extend(
+  options = vim.tbl_deep_extend(
     "force",
     { title = "Zk Tags", picker = config.options.picker, multi_select = true },
     config.options.picker_options or {},
@@ -59,7 +57,7 @@ end
 ---@param options table the same options that are use for pick_notes
 ---@return table api selection
 function M.get_pick_notes_list_api_selection(options)
-  options = vim.tbl_extend(
+  options = vim.tbl_deep_extend(
     "force",
     { picker = config.options.picker },
     config.options.picker_options or {},
